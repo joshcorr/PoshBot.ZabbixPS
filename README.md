@@ -19,15 +19,16 @@ In order to use this plugin you must have the following:
 
 ### PluginConfiguration
 
-The Zabbix API requires that you initally authenticate before receiving a Token for your session. As a result you need to store (or generate at runtime) the Service account credentials in the PoshBot configuration. There is already a [Guide on this in the poshbot repo](https://github.com/poshbotio/PoshBot/blob/master/docs/guides/plugin-configuration.md), but for those unfamiliar the final result should look like this:
+The Zabbix API requires that you initally authenticate before receiving a Token for your session. As a result you need to store (or generate at runtime) the Service account credentials in the PoshBot configuration (as `ZabbixAPI`). Additionally you will want to include a configuration variable for your Zabbix `Instance`. There is already a [Guide on this in the poshbot repo](https://github.com/poshbotio/PoshBot/blob/master/docs/guides/plugin-configuration.md), but for those unfamiliar the final result should look like this:
 
-Note: ZabbixAPI is the variable used in functions to autoload credentials.
+Note: ZabbixAPI is the variable used in functions to autoload credentials, and Instance is the URI to your specific instance
 ```
 @{
 ...
     PluginConfiguration = @{
         PoshBot.ZabbixPS = @{
             ZabbixAPI = (PSCredential "ZabbixServiceAcct", "0100sdfg02452042....")
+            Instance = "https://<fqdn>/zabbix/api_jsonrpc.php"
         }
     }
 ...
