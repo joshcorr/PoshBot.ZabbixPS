@@ -57,6 +57,70 @@ function convertToUnixTimeStamp {
     }
 }
 
+function getZabbixProblem {
+    <#
+    .SYNOPSIS
+        PoshBot function to return Zabbix Problems
+    .EXAMPLE
+        !GetZabbixProblem [-instance [FQDN] -time ['today','yesterday','thisweek','alltime']]
+    #>
+    [PoshBot.BotCommand(
+        CommandName = 'GetZabbixProblem',
+        Aliases = 'GetZBXProblem',
+        Permissions = ('Read')
+    )]
+    [CmdletBinding()]
+    param (
+        [PoshBot.FromConfig('ZabbixAPI')]
+        # ZabbixAPI credential
+        [Parameter(Mandatory)]
+        [pscredential]$creds,
+        [PoshBot.FromConfig('Instance')]
+        # FQDN to the Zabbix API
+        [Parameter(Mandatory)]
+        [string]$Instance,
+        [Parameter()]
+        [validateSet('today','yesterday','thisweek','alltime')]
+        [string]$time = 'today'
+    )
+
+    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
+    switch ($time) {
+        'today'     {$timeFilter = convertToUnixTimeStamp -date (Get-Date).GetDateTimeFormats()[3]}
+        'yesterday' {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-1).GetDateTimeFormats()[3]}
+        'thisweek'  {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-7).GetDateTimeFormats()[3]}
+        'alltime'   {$timeFilter = 0}
+    }
+
+    try {
+        $problems = Get-ZBXProblem -Session $session | Where-Object {$_.clock -ge $timeFilter} | Sort-Object -Property clock
+        if ($null -ne $problems) {
+            foreach ($p in $problems) {
+                $eventdata = Get-ZBXEvent -Session -EventID $($p.eventid)
+                $friendlyTime = convertFromUnixTimeStamp -timestamp $($p.clock) -format 105
+
+                $fields = [ordered]@{
+                    Host = $($eventdata.hosts.name)
+                    EventID = $p.eventid
+                    Problem = $p.name
+                    Time = $friendlyTime
+                    Acknowledged = $(if($p.acknowledged -eq 1){'yes'} else {'no'})
+                }
+                if ($fields.acknowledged -eq 'yes') {
+                    New-PoshBotCardResponse -type Normal -Title "Zabbix Problems on [$instance] from [$time]" -fields $fields
+                } else {
+                    New-PoshBotCardResponse -type Warning -Title "Zabbix Problems on [$instance] from [$time]" -fields $fields
+                }
+            }
+        } else {
+            New-PoshBotCardResponse -Title "Zabbix Problems on [$instance] from [$time]" -Text "Currently no active or unacknowledged problems on [$instance]"
+        }
+    } catch {
+        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
+    } finally {
+        $null = Remove-ZBXSession $session.id
+    }
+}
 
 # Export all functions for poshbot
 Export-ModuleMember *
