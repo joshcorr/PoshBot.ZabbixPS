@@ -122,6 +122,66 @@ function getZabbixProblem {
     }
 }
 
+function getZabbixMaintenance {
+    <#
+    .SYNOPSIS
+        PoshBot function to return Zabbix Maintenance
+    .EXAMPLE
+        !GetZabbixMaintenance [-instance [FQDN]]
+    #>
+    [PoshBot.BotCommand(
+        CommandName = 'GetZabbixMaintenance',
+        Aliases = ('GetZBXMaint','GetZBXMaintenance'),
+        Permissions = ('Read')
+    )]
+    [CmdletBinding()]
+    param (
+        [PoshBot.FromConfig('ZabbixAPI')]
+        # ZabbixAPI credential
+        [Parameter(Mandatory)]
+        [pscredential]$creds,
+        [PoshBot.FromConfig('Instance')]
+        # FQDN to the Zabbix API
+        [Parameter(Mandatory)]
+        [string]$Instance
+    )
+
+    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
+
+    try {
+        $MaintenanceWindow = Get-ZBXMaintenance -Session $session
+        if ($null -ne $MaintenanceWindow) {
+            foreach ($m in $MaintenanceWindow) {
+                $maintStart = [timespan]::FromSeconds($m.timeperiods.start_time).totalhours
+                $maintDurration = [timespan]::FromSeconds($m.timeperiods.period).totalhours
+                $maintEnd = $maintStart + $maintDurration
+                $currentdate = (Get-Date)
+                $currentHour = $($currentdate.Hour + ($currentdate.Minute / 60))
+
+                $fields = [ordered]@{
+                    Name = $($m.name)
+                    Description = $($m.Description)
+                    ActiveSince = $(convertFromUnixTimeStamp -timestamp $($m.active_since) -format 105)
+                    ActiveUntil = $(convertFromUnixTimeStamp -timestamp $($m.active_till) -format 105)
+                    MaintenanceType = $(switch ($m.timeperiods.timeperiod_type){ 0 {"one time only"}; 2 {"daily"}; 3{"weekly"}; 4{"monthly"}; default {"notsure"} })
+                    MaintenanceStart = $maintStart
+                    MaintenanceEnd = $maintEnd
+                    MaintenanceDurration = "$($maintDurration) HRs"
+                    Active = $(if($currentHour -gt $maintStart -and $currentHour -lt $maintEnd){"Possibly - Day Needs to be calculated"}else{"No"})
+                }
+
+                New-PoshBotCardResponse -type Normal -Title "Zabbix Maintenance Schedules on [$instance]" -fields $fields
+            }
+        } else {
+            New-PoshBotCardResponse -Type Warrning  -Title "Zabbix Maintenance not found on [$instance]" -Text "Check Zabbix [$instance] to ensure this is expected"
+        }
+    } catch {
+        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
+    } finally {
+        $null = Remove-ZBXSession $session.id
+    }
+}
+
 # Export all functions for poshbot
 Export-ModuleMember *
 
