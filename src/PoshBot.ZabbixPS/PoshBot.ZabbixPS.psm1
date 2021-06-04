@@ -181,6 +181,49 @@ function getZabbixMaintenance {
         $null = Remove-ZBXSession $session.id
     }
 }
+function acknowledgeZabbixEvent {
+    <#
+    .SYNOPSIS
+        PoshBot function to acknowledge a Zabbix Event
+    .EXAMPLE
+        !AcknowledgeZabbixEvent [-instance [FQDN] -eventid <string> -message "<string>"]
+    #>
+    [PoshBot.BotCommand(
+        CommandName = 'AcknowledgeZabbixEvent',
+        Aliases = ('AckZBX'),
+        Permissions = ('Write')
+    )]
+    [CmdletBinding()]
+    param (
+        [PoshBot.FromConfig('ZabbixAPI')]
+        # ZabbixAPI credential
+        [Parameter(Mandatory)]
+        [pscredential]$creds,
+        [PoshBot.FromConfig('Instance')]
+        # FQDN to the Zabbix API
+        [Parameter(Mandatory)]
+        [string]$Instance,
+        [Parameter()]
+        [string]$eventid,
+        [Parameter()]
+        [string]$message
+    )
+    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
+    $user = $global:PoshBotContext.FromName
+    if($PSBoundParameters.ContainsKey('message')){
+        $AcknowledgeMessage = $message + "- $user"
+    } else {
+        $AcknowledgeMessage = "Message Acknolwedged via PoshBot by $user"
+    }
+    try {
+        $output = Confirm-ZBXEvent -Session $session -EventID $eventid -AcknowledgeAction Acknowledge,AddMessage -AcknowledgeMessage $AcknowledgeMessage
+        New-PoshBotCardResponse -Title "Zabbix Acknowledged on [$instance] for [$eventid]" -Text ($output | Format-List -Property * | Out-String)
+    } catch {
+        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
+    } finally {
+        $null = Remove-ZBXSession $session.id
+    }
+}
 
 # Export all functions for poshbot
 Export-ModuleMember *
