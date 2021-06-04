@@ -1,0 +1,51 @@
+---
+name: test
+on:
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  lint:
+    name: Lint Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          # Full git history is needed to get a proper list of changed files within `super-linter`
+          fetch-depth: 0
+      - name: Lint Code Base
+        uses: github/super-linter@v3
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          VALIDATE_JSON: false
+          LINTER_RULES_PATH: .github/linters
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  import:
+    name: Import Module
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v2
+        with:
+          path: "~/.local/share/powershell/Modules"
+          key: ${{ runner.os }}-PoshBot.ZabbixPS
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PoshBot -ErrorAction Stop
+          Install-Module -Name ZabbixPS -ErrorAction Stop
+      - name: Perform the import
+        shell: pwsh
+        run: Import-Module .src/PoshBot.ZabbixPS/PoshBot.ZabbixPS.psd1 -ErrorAction Stop; (Get-Command -Module PoshBot.ZabbixPS) -ne $null

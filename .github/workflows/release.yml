@@ -1,0 +1,49 @@
+---
+name: release
+on:
+  pull_request:
+    types: [closed]
+    branches:
+    - main
+  push:
+    branches:
+    - main
+
+jobs:
+  publish:
+    if: ${{ github.event.pull_request.merged == true || github.actor == 'joshcorr' }}
+    name: Publish Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v2
+        with:
+          path: "~/.local/share/powershell/Modules"
+          key: ${{ runner.os }}-PoshBot.ZabbixPS
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PoshBot -ErrorAction Stop
+          Install-Module -Name ZabbixPS -ErrorAction Stop
+      - name: Build Module
+        shell: pwsh
+        run: |
+          Copy-Item -path src/ -Destination /tmp/artifacts/PoshBot.ZabbixPS/ -Recurse -Force
+      - name: Get Version
+        if: ${{ success() }}
+        shell: pwsh
+        run: |
+          $Version = Test-ModuleManifest -Path /tmp/artifacts/PoshBot.ZabbixPS/PoshBot.ZabbixPS.psd1
+          echo "tag=$Version.Version.ToString()" >> $GITHUB_ENV
+          if ($null -eq $($test.privatedata.psdata.prerelease)) {echo "prerelase=false" >> $GITHUB_ENV} else {echo "prerelase=true" >> $GITHUB_ENV}
+      - name: Publish Module
+        shell: pwsh
+        env:
+          NUGET_KEY: ${{ secrets.NUGET_APIKEY }}
+        run: |
+          Publish-Module -Path /tmp/artifacts/PoshBot.ZabbixPS -NuGetApiKey $env:NUGET_KEY
