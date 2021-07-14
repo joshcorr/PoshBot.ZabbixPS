@@ -96,7 +96,7 @@ function getZabbixProblem {
         $problems = Get-ZBXProblem -Session $session | Where-Object {$_.clock -ge $timeFilter} | Sort-Object -Property clock
         if ($null -ne $problems) {
             foreach ($p in $problems) {
-                $eventdata = Get-ZBXEvent -Session -EventID $($p.eventid)
+                $eventdata = Get-ZBXEvent -Session $session -EventID $($p.eventid)
                 $friendlyTime = convertFromUnixTimeStamp -timestamp $($p.clock) -format 105
 
                 $fields = [ordered]@{
