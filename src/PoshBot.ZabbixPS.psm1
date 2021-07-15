@@ -14,7 +14,7 @@ function convertFromUnixTimeStamp {
     #>
     [PoshBot.BotCommand(
         CommandName = 'convertFromUnixTimeStamp',
-        Aliases = ('unixtime','fromunixtime')
+        Aliases = ('unixtime', 'fromunixtime')
     )]
     [CmdletBinding()]
     param (
@@ -22,7 +22,7 @@ function convertFromUnixTimeStamp {
         [int]$format
     )
     $epoch = (Get-Date "01/01/1970")
-    if ($format){
+    if ($format) {
         $epoch.AddSeconds($timeStamp).GetDateTimeFormats()[$format]
     } else {
         $epoch.AddSeconds($timeStamp)
@@ -49,9 +49,10 @@ function convertToUnixTimeStamp {
     param (
         [string]$date
     )
-    try { $validdate = [datetime]::ParseExact($date,'d',$null)
-    $epoch = (Get-Date "01/01/1970")
-    (New-TimeSpan -Start $epoch -End (Get-Date $validdate).date).TotalSeconds
+    try {
+        $validdate = [datetime]::ParseExact($date, 'd', $null)
+        $epoch = (Get-Date "01/01/1970")
+        (New-TimeSpan -Start $epoch -End (Get-Date $validdate).date).TotalSeconds
     } catch {
         New-PoshBotCardResponse -Type Warning -Text 'Please use the format MM/dd/Year'
     }
@@ -62,7 +63,7 @@ function getZabbixProblem {
     .SYNOPSIS
         PoshBot function to return Zabbix Problems
     .EXAMPLE
-        !GetZabbixProblem [-instance [FQDN] -time ['today','yesterday','thisweek','alltime']]
+        !GetZabbixProblem [-instance [FriendlyName] -time ['today','yesterday','thisweek','alltime']]
     #>
     [PoshBot.BotCommand(
         CommandName = 'GetZabbixProblem',
@@ -75,50 +76,61 @@ function getZabbixProblem {
         # ZabbixAPI credential
         [Parameter(Mandatory)]
         [pscredential]$creds,
-        [PoshBot.FromConfig('Instance')]
-        # FQDN to the Zabbix API
+        [PoshBot.FromConfig('InstanceData')]
+        # FQDN to the Zabbix API in KV pair
         [Parameter(Mandatory)]
-        [string]$Instance,
+        [hashtable]$InstanceData,
+        # Instance friendly name filter
         [Parameter()]
-        [validateSet('today','yesterday','thisweek','alltime')]
+        [string]$Instance,
+        # Time filter for problems
+        [Parameter()]
+        [validateSet('today', 'yesterday', 'thisweek', 'alltime')]
         [string]$time = 'today'
     )
-
-    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
-    switch ($time) {
-        'today'     {$timeFilter = convertToUnixTimeStamp -date (Get-Date).GetDateTimeFormats()[3]}
-        'yesterday' {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-1).GetDateTimeFormats()[3]}
-        'thisweek'  {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-7).GetDateTimeFormats()[3]}
-        'alltime'   {$timeFilter = 0}
+    if ($Instance) {
+        $InstanceURL = $InstanceData.GetEnumerator() | Where-Object {$_.key -eq $Instance}
+    } else {
+        $InstanceURL = $InstanceData.GetEnumerator()
     }
-
-    try {
-        $problems = Get-ZBXProblem -Session $session | Where-Object {$_.clock -ge $timeFilter} | Sort-Object -Property clock
-        if ($null -ne $problems) {
-            foreach ($p in $problems) {
-                $eventdata = Get-ZBXEvent -Session $session -EventID $($p.eventid)
-                $friendlyTime = convertFromUnixTimeStamp -timestamp $($p.clock) -format 105
-
-                $fields = [ordered]@{
-                    Host = $($eventdata.hosts.name)
-                    EventID = $p.eventid
-                    Problem = $p.name
-                    Time = $friendlyTime
-                    Acknowledged = $(if($p.acknowledged -eq 1){'yes'} else {'no'})
-                }
-                if ($fields.acknowledged -eq 'yes') {
-                    New-PoshBotCardResponse -type Normal -Title "Zabbix Problems on [$instance] from [$time]" -fields $fields
-                } else {
-                    New-PoshBotCardResponse -type Warning -Title "Zabbix Problems on [$instance] from [$time]" -fields $fields
-                }
-            }
-        } else {
-            New-PoshBotCardResponse -Title "Zabbix Problems on [$instance] from [$time]" -Text "Currently no active or unacknowledged problems on [$instance]"
+    foreach ($i in $InstanceURL) {
+        $session = New-ZBXSession -Name "Temp-PoshBot" -URI $i.Value -Credential $creds
+        switch ($time) {
+            'today' {$timeFilter = convertToUnixTimeStamp -date (Get-Date).GetDateTimeFormats()[3]}
+            'yesterday' {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-1).GetDateTimeFormats()[3]}
+            'thisweek' {$timeFilter = convertToUnixTimeStamp -date (Get-Date).AddDays(-7).GetDateTimeFormats()[3]}
+            'alltime' {$timeFilter = 0}
         }
-    } catch {
-        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
-    } finally {
-        $null = Remove-ZBXSession $session.id
+
+        try {
+            $problems = Get-ZBXProblem -Session $session | Where-Object {$_.clock -ge $timeFilter} | Sort-Object -Property clock
+            if ($null -ne $problems) {
+                foreach ($p in $problems) {
+                    $eventdata = Get-ZBXEvent -Session $session -EventID $($p.eventid)
+                    $friendlyTime = convertFromUnixTimeStamp -timestamp $($p.clock) -format 105
+
+                    $fields = [ordered]@{
+                        Host         = $($eventdata.hosts.name)
+                        EventID      = $p.eventid
+                        Problem      = $p.name
+                        Time         = $friendlyTime
+                        Acknowledged = $(if ($p.acknowledged -eq 1) {'yes'} else {'no'})
+                    }
+                    if ($fields.acknowledged -eq 'yes') {
+                        New-PoshBotCardResponse -type Normal -Title "Zabbix Problems on [$($i.Key)] from [$time]" -fields $fields
+                    } else {
+                        New-PoshBotCardResponse -type Warning -Title "Zabbix Problems on [$($i.Key)] from [$time]" -fields $fields
+                    }
+                }
+            } else {
+                New-PoshBotCardResponse -Title "Zabbix Problems on [$($i.Key)] from [$time]" -Text "Currently no active or unacknowledged problems on [$($i.Key)]"
+            }
+        } catch {
+            New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name) against [$($i.Key)]"
+        } finally {
+            $null = Remove-ZBXSession $session.id
+            $Global:_ZabbixAuthenticationToken, $Global:_ZabbixSessions = $null
+        }
     }
 }
 
@@ -131,7 +143,7 @@ function getZabbixMaintenance {
     #>
     [PoshBot.BotCommand(
         CommandName = 'GetZabbixMaintenance',
-        Aliases = ('GetZBXMaint','GetZBXMaintenance'),
+        Aliases = ('GetZBXMaint', 'GetZBXMaintenance'),
         Permissions = ('Read')
     )]
     [CmdletBinding()]
@@ -159,15 +171,15 @@ function getZabbixMaintenance {
                 $currentHour = $($currentdate.Hour + ($currentdate.Minute / 60))
 
                 $fields = [ordered]@{
-                    Name = $($m.name)
-                    Description = $($m.Description)
-                    ActiveSince = $(convertFromUnixTimeStamp -timestamp $($m.active_since) -format 105)
-                    ActiveUntil = $(convertFromUnixTimeStamp -timestamp $($m.active_till) -format 105)
-                    MaintenanceType = $(switch ($m.timeperiods.timeperiod_type){ 0 {"one time only"}; 2 {"daily"}; 3{"weekly"}; 4{"monthly"}; default {"notsure"} })
-                    MaintenanceStart = $maintStart
-                    MaintenanceEnd = $maintEnd
+                    Name                 = $($m.name)
+                    Description          = $($m.Description)
+                    ActiveSince          = $(convertFromUnixTimeStamp -timestamp $($m.active_since) -format 105)
+                    ActiveUntil          = $(convertFromUnixTimeStamp -timestamp $($m.active_till) -format 105)
+                    MaintenanceType      = $(switch ($m.timeperiods.timeperiod_type) { 0 {"one time only"}; 2 {"daily"}; 3 {"weekly"}; 4 {"monthly"}; default {"notsure"} })
+                    MaintenanceStart     = $maintStart
+                    MaintenanceEnd       = $maintEnd
                     MaintenanceDurration = "$($maintDurration) HRs"
-                    Active = $(if($currentHour -gt $maintStart -and $currentHour -lt $maintEnd){"Possibly - Day Needs to be calculated"}else{"No"})
+                    Active               = $(if ($currentHour -gt $maintStart -and $currentHour -lt $maintEnd) {"Possibly - Day Needs to be calculated"}else {"No"})
                 }
 
                 New-PoshBotCardResponse -type Normal -Title "Zabbix Maintenance Schedules on [$instance]" -fields $fields
@@ -210,13 +222,13 @@ function acknowledgeZabbixEvent {
     )
     $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
     $user = $global:PoshBotContext.FromName
-    if($PSBoundParameters.ContainsKey('message')){
+    if ($PSBoundParameters.ContainsKey('message')) {
         $AcknowledgeMessage = $message + "- $user"
     } else {
         $AcknowledgeMessage = "Message Acknolwedged via PoshBot by $user"
     }
     try {
-        $output = Confirm-ZBXEvent -Session $session -EventID $eventid -AcknowledgeAction Acknowledge,AddMessage -AcknowledgeMessage $AcknowledgeMessage
+        $output = Confirm-ZBXEvent -Session $session -EventID $eventid -AcknowledgeAction Acknowledge, AddMessage -AcknowledgeMessage $AcknowledgeMessage
         New-PoshBotCardResponse -Title "Zabbix Acknowledged on [$instance] for [$eventid]" -Text ($output | Format-List -Property * | Out-String)
     } catch {
         New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
