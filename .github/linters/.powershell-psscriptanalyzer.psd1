@@ -11,7 +11,7 @@
     ExcludeRules        = @(
         'PSUseShouldProcessForStateChangingFunctions',
         'PSAvoidGlobalVars',
-        'PSUseDeclaredVarsMoreThanAssignment'
+        'PSUseDeclaredVarsMoreThanAssignments'
     )
     #IncludeRules = @(
     #    'PSAvoidUsingWriteHost',
