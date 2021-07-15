@@ -9,7 +9,9 @@
     )
     IncludeDefaultRules = ${true}
     ExcludeRules        = @(
-        'PSUseShouldProcessForStateChangingFunctions'
+        'PSUseShouldProcessForStateChangingFunctions',
+        'PSAvoidGlobalVars',
+        'PSUseDeclaredVarsMoreThanAssignments'
     )
     #IncludeRules = @(
     #    'PSAvoidUsingWriteHost',

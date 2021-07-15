@@ -46,6 +46,11 @@ jobs:
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module -Name PoshBot -ErrorAction Stop
           Install-Module -Name ZabbixPS -ErrorAction Stop
+          Install-Module -Name Pester -MinimumVersion 5.2.0 -ErrorAction Stop
       - name: Perform the import
         shell: pwsh
-        run: Import-Module .src/PoshBot.ZabbixPS/PoshBot.ZabbixPS.psd1 -ErrorAction Stop; (Get-Command -Module PoshBot.ZabbixPS) -ne $null
+        run: Import-Module ./src/PoshBot.ZabbixPS.psd1 -ErrorAction Stop; (Get-Command -Module PoshBot.ZabbixPS) -ne $null
+      - name: Execute Pester Tests
+        shell: pwsh
+        run: |
+          Invoke-Pester ./tests/* -Output Detailed
