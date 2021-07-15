@@ -139,7 +139,7 @@ function getZabbixMaintenance {
     .SYNOPSIS
         PoshBot function to return Zabbix Maintenance
     .EXAMPLE
-        !GetZabbixMaintenance [-instance [FQDN]]
+        !GetZabbixMaintenance [-instance [FriendlyName]]
     #>
     [PoshBot.BotCommand(
         CommandName = 'GetZabbixMaintenance',
@@ -152,45 +152,55 @@ function getZabbixMaintenance {
         # ZabbixAPI credential
         [Parameter(Mandatory)]
         [pscredential]$creds,
-        [PoshBot.FromConfig('Instance')]
-        # FQDN to the Zabbix API
+        [PoshBot.FromConfig('InstanceData')]
+        # FQDN to the Zabbix API in KV pair
         [Parameter(Mandatory)]
+        [hashtable]$InstanceData,
+        # Instance friendly name filter
+        [Parameter()]
         [string]$Instance
     )
+    if ($Instance) {
+        $InstanceURL = $InstanceData.GetEnumerator() | Where-Object {$_.key -eq $Instance}
+    } else {
+        $InstanceURL = $InstanceData.GetEnumerator()
+    }
+    foreach ($i in $InstanceURL) {
+        $session = New-ZBXSession -Name "Temp-PoshBot" -URI $i.Value -Credential $creds
 
-    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
+        try {
+            $MaintenanceWindow = Get-ZBXMaintenance -Session $session
+            if ($null -ne $MaintenanceWindow) {
+                foreach ($m in $MaintenanceWindow) {
+                    $maintStart = [timespan]::FromSeconds($m.timeperiods.start_time).totalhours
+                    $maintDurration = [timespan]::FromSeconds($m.timeperiods.period).totalhours
+                    $maintEnd = $maintStart + $maintDurration
+                    $currentdate = (Get-Date)
+                    $currentHour = $($currentdate.Hour + ($currentdate.Minute / 60))
 
-    try {
-        $MaintenanceWindow = Get-ZBXMaintenance -Session $session
-        if ($null -ne $MaintenanceWindow) {
-            foreach ($m in $MaintenanceWindow) {
-                $maintStart = [timespan]::FromSeconds($m.timeperiods.start_time).totalhours
-                $maintDurration = [timespan]::FromSeconds($m.timeperiods.period).totalhours
-                $maintEnd = $maintStart + $maintDurration
-                $currentdate = (Get-Date)
-                $currentHour = $($currentdate.Hour + ($currentdate.Minute / 60))
+                    $fields = [ordered]@{
+                        Name                 = $($m.name)
+                        Description          = $($m.Description)
+                        ActiveSince          = $(convertFromUnixTimeStamp -timestamp $($m.active_since) -format 105)
+                        ActiveUntil          = $(convertFromUnixTimeStamp -timestamp $($m.active_till) -format 105)
+                        MaintenanceType      = $(switch ($m.timeperiods.timeperiod_type) { 0 {"one time only"}; 2 {"daily"}; 3 {"weekly"}; 4 {"monthly"}; default {"notsure"} })
+                        MaintenanceStart     = $maintStart
+                        MaintenanceEnd       = $maintEnd
+                        MaintenanceDurration = "$($maintDurration) HRs"
+                        Active               = $(if ($currentHour -gt $maintStart -and $currentHour -lt $maintEnd) {"Possibly - Day Needs to be calculated"}else {"No"})
+                    }
 
-                $fields = [ordered]@{
-                    Name                 = $($m.name)
-                    Description          = $($m.Description)
-                    ActiveSince          = $(convertFromUnixTimeStamp -timestamp $($m.active_since) -format 105)
-                    ActiveUntil          = $(convertFromUnixTimeStamp -timestamp $($m.active_till) -format 105)
-                    MaintenanceType      = $(switch ($m.timeperiods.timeperiod_type) { 0 {"one time only"}; 2 {"daily"}; 3 {"weekly"}; 4 {"monthly"}; default {"notsure"} })
-                    MaintenanceStart     = $maintStart
-                    MaintenanceEnd       = $maintEnd
-                    MaintenanceDurration = "$($maintDurration) HRs"
-                    Active               = $(if ($currentHour -gt $maintStart -and $currentHour -lt $maintEnd) {"Possibly - Day Needs to be calculated"}else {"No"})
+                    New-PoshBotCardResponse -type Normal -Title "Zabbix Maintenance Schedules on [$($i.Key)]" -fields $fields
                 }
-
-                New-PoshBotCardResponse -type Normal -Title "Zabbix Maintenance Schedules on [$instance]" -fields $fields
+            } else {
+                New-PoshBotCardResponse -Type Warrning  -Title "Zabbix Maintenance not found on [$($i.Key)]" -Text "Check Zabbix [$($i.key)] to ensure this is expected"
             }
-        } else {
-            New-PoshBotCardResponse -Type Warrning  -Title "Zabbix Maintenance not found on [$instance]" -Text "Check Zabbix [$instance] to ensure this is expected"
+        } catch {
+            New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name) against [$($i.Key)]"
+        } finally {
+            $null = Remove-ZBXSession $session.id
+            $Global:_ZabbixAuthenticationToken, $Global:_ZabbixSessions = $null
         }
-    } catch {
-        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
-    } finally {
-        $null = Remove-ZBXSession $session.id
     }
 }
 function acknowledgeZabbixEvent {
@@ -198,7 +208,7 @@ function acknowledgeZabbixEvent {
     .SYNOPSIS
         PoshBot function to acknowledge a Zabbix Event
     .EXAMPLE
-        !AcknowledgeZabbixEvent [-instance [FQDN] -eventid <string> -message "<string>"]
+        !AcknowledgeZabbixEvent [-instance [FriendlyName] -eventid <string> -message "<string>"]
     #>
     [PoshBot.BotCommand(
         CommandName = 'AcknowledgeZabbixEvent',
@@ -211,29 +221,42 @@ function acknowledgeZabbixEvent {
         # ZabbixAPI credential
         [Parameter(Mandatory)]
         [pscredential]$creds,
-        [PoshBot.FromConfig('Instance')]
-        # FQDN to the Zabbix API
+        [PoshBot.FromConfig('InstanceData')]
+        # FQDN to the Zabbix API in KV pair
         [Parameter(Mandatory)]
+        [hashtable]$InstanceData,
+        # Instance friendly name filter
+        [Parameter()]
         [string]$Instance,
+        # EventID of the problem you are acknowledging
         [Parameter()]
         [string]$eventid,
+        # Message of the acknowledgement message
         [Parameter()]
         [string]$message
     )
-    $session = New-ZBXSession -Name "Temp-PoshBot" -URI $Instance -Credential $creds
-    $user = $global:PoshBotContext.FromName
-    if ($PSBoundParameters.ContainsKey('message')) {
-        $AcknowledgeMessage = $message + "- $user"
+    if ($Instance) {
+        $InstanceURL = $InstanceData.GetEnumerator() | Where-Object {$_.key -eq $Instance}
     } else {
-        $AcknowledgeMessage = "Message Acknolwedged via PoshBot by $user"
+        $InstanceURL = $InstanceData.GetEnumerator()
     }
-    try {
-        $output = Confirm-ZBXEvent -Session $session -EventID $eventid -AcknowledgeAction Acknowledge, AddMessage -AcknowledgeMessage $AcknowledgeMessage
-        New-PoshBotCardResponse -Title "Zabbix Acknowledged on [$instance] for [$eventid]" -Text ($output | Format-List -Property * | Out-String)
-    } catch {
-        New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name)"
-    } finally {
-        $null = Remove-ZBXSession $session.id
+    foreach ($i in $InstanceURL) {
+        $session = New-ZBXSession -Name "Temp-PoshBot" -URI $i.Value -Credential $creds
+        $user = $global:PoshBotContext.FromName
+        if ($PSBoundParameters.ContainsKey('message')) {
+            $AcknowledgeMessage = $message + "- $user"
+        } else {
+            $AcknowledgeMessage = "Message Acknolwedged via PoshBot by $user"
+        }
+        try {
+            $output = Confirm-ZBXEvent -Session $session -EventID $eventid -AcknowledgeAction Acknowledge, AddMessage -AcknowledgeMessage $AcknowledgeMessage
+            New-PoshBotCardResponse -Title "Zabbix Acknowledged on [$($i.Key)] for [$eventid]" -Text ($output | Format-List -Property * | Out-String)
+        } catch {
+            New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name) against [$($i.Key)]"
+        } finally {
+            $null = Remove-ZBXSession $session.id
+            $Global:_ZabbixAuthenticationToken, $Global:_ZabbixSessions = $null
+        }
     }
 }
 
