@@ -1,6 +1,6 @@
 @{
 RootModule = 'PoshBot.ZabbixPS.psm1'
-ModuleVersion = '0.0.2'
+ModuleVersion = '0.0.3'
 GUID = '33a63414-5bcb-4df8-8b51-f43f02c62f50'
 Author = 'Josh Corrick (@joshcorr)'
 CompanyName = 'blog.corrick.io'
