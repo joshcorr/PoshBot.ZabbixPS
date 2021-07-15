@@ -138,7 +138,7 @@ function getZabbixHostInMaintenance {
     .SYNOPSIS
         PoshBot function to return Zabbix Maintenance
     .EXAMPLE
-        !GetZabbixHostInMaintenance [-instance [FriendlyName]]
+        !GetZabbixHostInMaintenance [-instance [FriendlyName] -hostname [hostname]]
     #>
     [PoshBot.BotCommand(
         CommandName = 'GetZabbixHostInMaintenance',
@@ -157,18 +157,23 @@ function getZabbixHostInMaintenance {
         [hashtable]$InstanceData,
         # Instance friendly name filter
         [Parameter()]
-        [string]$Instance
+        [string]$Instance,
+        # Hostname specifically looking for
+        [Parameter()]
+        [string]$HostName
     )
     if ($Instance) {
         $InstanceURL = $InstanceData.GetEnumerator() | Where-Object {$_.key -eq $Instance}
     } else {
         $InstanceURL = $InstanceData.GetEnumerator()
     }
+    $HostSplat = @{name = $HostName}
     foreach ($i in $InstanceURL) {
         $session = New-ZBXSession -Name "Temp-PoshBot" -URI $i.Value -Credential $creds
         try {
-            #Filtering for hosts with Active Maintenance and Actively monitored
-            $hosts = Get-ZBXHost -Session $session | Where-Object {$_.maintenance_status -eq 1 -and $_.status -eq 0}
+            # Filtering for hosts with Active Maintenance and Actively monitored
+            # If hostsplat is not null lookup specific host
+            $hosts = Get-ZBXHost -Session $session @HostSplat | Where-Object {$_.maintenance_status -eq 1 -and $_.status -eq 0}
             if ($null -ne $hosts) {
                 foreach ($h in $hosts) {
                     $m = Get-ZBXMaintenance -Session $Session -id $h.maintenanceID
@@ -177,13 +182,13 @@ function getZabbixHostInMaintenance {
                         Name                 = $($h.name)
                         MaintenanceID        = $($h.maintenanceID)
                         MaintenanceName      = $($m.name)
-                        InMaintenanceSince   = $(convertFromUnixTimeStamp -timestamp $($h.maintenance_from) -format 105)
+                        MaintenanceFrom   = $(convertFromUnixTimeStamp -timestamp $($h.maintenance_from) -format 105)
                     }
 
                     New-PoshBotCardResponse -type Normal -Title "Zabbix Hosts in Maintenance on [$($i.Key)]" -fields $fields
                 }
             } else {
-                New-PoshBotCardResponse -Type Warrning  -Title "Zabbix Hosts not found in Maintenance on [$($i.Key)]" -Text "Check Zabbix [$($i.key)] to ensure this is expected"
+                New-PoshBotCardResponse -Type Warning  -Title "Zabbix Hosts not found in Maintenance on [$($i.Key)]" -Text "Check Zabbix [$($i.key)] to ensure this is expected"
             }
         } catch {
             New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name) against [$($i.Key)]"
@@ -252,7 +257,7 @@ function getZabbixMaintenance {
                     New-PoshBotCardResponse -type Normal -Title "Zabbix Maintenance Schedules on [$($i.Key)]" -fields $fields
                 }
             } else {
-                New-PoshBotCardResponse -Type Warrning  -Title "Zabbix Maintenance not found on [$($i.Key)]" -Text "Check Zabbix [$($i.key)] to ensure this is expected"
+                New-PoshBotCardResponse -Type Warning  -Title "Zabbix Maintenance not found on [$($i.Key)]" -Text "Check Zabbix [$($i.key)] to ensure this is expected"
             }
         } catch {
             New-PoshBotCardResponse -Type Error -Text "Something bad happened while running !$($MyInvocation.MyCommand.Name) against [$($i.Key)]"
