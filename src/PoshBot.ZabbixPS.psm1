@@ -9,8 +9,6 @@ function convertFromUnixTimeStamp {
         A number to pull the specific format from the getDateTimeFormats array
     .EXAMPLE
         !unitxtime [-timestamp <timeinseconds> -format <number>]
-    .NOTES
-        Uses code from https://stackoverflow.com/questions/10781697/convert-unix-time-with-powershell
     #>
     [PoshBot.BotCommand(
         CommandName = 'convertFromUnixTimeStamp',
@@ -21,11 +19,10 @@ function convertFromUnixTimeStamp {
         [int64]$timeStamp,
         [int]$format
     )
-    $epoch = (Get-Date "01/01/1970")
     if ($format) {
-        $epoch.AddSeconds($timeStamp).GetDateTimeFormats()[$format]
+        [DateTimeOffset]::FromUnixTimeSeconds($timeStamp).DateTime.GetDateTimeFormats()[$format]
     } else {
-        $epoch.AddSeconds($timeStamp)
+        [DateTimeOffset]::FromUnixTimeSeconds($timeStamp).DateTime
     }
 }
 function convertToUnixTimeStamp {
@@ -36,10 +33,6 @@ function convertToUnixTimeStamp {
         A string in the format MM/dd/YYYY
     .EXAMPLE
         !tounixtime [-date <string >]
-    .NOTES
-        Uses ideas from:
-        https://www.powershellmagazine.com/2013/07/09/pstip-how-to-check-if-a-datetime-string-is-in-a-specific-pattern/
-        https://stackoverflow.com/questions/4192971/in-powershell-how-do-i-convert-datetime-to-unix-time/
     #>
     [PoshBot.BotCommand(
         CommandName = 'convertToUnixTimeStamp',
@@ -50,9 +43,10 @@ function convertToUnixTimeStamp {
         [string]$date
     )
     try {
-        $validdate = [datetime]::ParseExact($date, 'd', $null)
-        $epoch = (Get-Date "01/01/1970")
-        (New-TimeSpan -Start $epoch -End (Get-Date $validdate).date).TotalSeconds
+        $validdate = [DateTimeOffset]::ParseExact($date, 'd', $null).ToUnixTimeSeconds()
+        # following line ensures local time is returned since .ToUnixTimeSeconds() is UTC
+        $hours = [DateTimeOffset]::ParseExact($date, 'd', $null).Offset.TotalSeconds
+        $validdate + $hours
     } catch {
         New-PoshBotCardResponse -Type Warning -Text 'Please use the format MM/dd/Year'
     }
